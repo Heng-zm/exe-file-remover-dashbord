@@ -100,6 +100,26 @@ Your backend should:
 5. Return `403` for users who are not group admins or not the developer owner.
 6. Include developer/owner status in `POST /api/auth/session` so the frontend can show the Developer Dashboard.
 
+
+## Vercel static deploy
+
+This project includes `vercel.json` to avoid the npm install crash seen on Vercel. It uses:
+
+```txt
+Install Command: npm ci --production=false --no-audit --no-fund --legacy-peer-deps
+Build Command: npm run build
+Output Directory: dist
+Node Version: 20.x
+```
+
+Set this environment variable in Vercel:
+
+```env
+VITE_API_BASE=https://exe-file-remover.onrender.com
+```
+
+If Vercel still shows `npm error Exit handler never called`, redeploy with **Clear Build Cache**. Do not upload a lockfile that contains private/internal registry URLs.
+
 ## Render static deploy
 
 Use these settings for a Render Static Site:
@@ -128,4 +148,3 @@ This repository also includes `render.yaml` for Blueprint deploys.
 - Telegram BackButton and MainButton are integrated.
 - Telegram haptic feedback is used on save, scan, and destructive actions.
 - The UI maps Telegram theme colors into Tailwind/shadcn CSS variables.
-# exe-file-remover-dashbord
