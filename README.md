@@ -1,0 +1,131 @@
+# EXE File Remover Telegram Mini App Frontend
+
+Modern Telegram Mini App frontend for the EXE File Remover Security Bot.
+
+## Stack
+
+- React + TypeScript + Vite
+- Tailwind CSS
+- shadcn/ui-style components
+- Radix primitives
+- lucide-react icons
+- Telegram WebApp SDK via `https://telegram.org/js/telegram-web-app.js`
+- Sonner toasts
+- HashRouter for safe static hosting
+
+## Quick start
+
+```bash
+npm install
+cp .env.example .env.local
+npm run dev
+```
+
+Open the local URL from Telegram only when testing Telegram auth. Outside Telegram, the app intentionally shows:
+
+```txt
+Please open this app from Telegram.
+```
+
+## Environment
+
+```env
+VITE_API_BASE=https://exe-file-remover.onrender.com
+```
+
+Vite exposes only `VITE_*` variables to the browser bundle, so do not put secrets here.
+
+## Build
+
+```bash
+npm run build
+npm run preview
+```
+
+## shadcn setup commands
+
+This project already includes shadcn-style component files under `src/components/ui`. If you want to regenerate with the official CLI in a fresh project, use:
+
+```bash
+npm create vite@latest exe-remover-miniapp -- --template react-ts
+cd exe-remover-miniapp
+npm install -D tailwindcss postcss autoprefixer tailwindcss-animate
+npx tailwindcss init -p
+npx shadcn@latest init
+npx shadcn@latest add button card badge tabs dialog sheet dropdown-menu input label switch select table skeleton alert sonner textarea
+npm install lucide-react react-router-dom sonner
+```
+
+## API integration
+
+All requests go through `src/lib/api.ts`.
+
+Every request sends:
+
+```ts
+Authorization: `tma ${window.Telegram.WebApp.initData}`
+Content-Type: application/json
+```
+
+Important endpoints used:
+
+- `POST /api/auth/session`
+- `GET /api/me/groups`
+- `GET /api/groups/{chat_id}`
+- `PATCH /api/groups/{chat_id}/settings`
+- `POST /api/scan/name`
+- `GET|POST|DELETE /api/groups/{chat_id}/formats/allowed`
+- `GET|POST|DELETE /api/groups/{chat_id}/formats/blocked`
+- `GET|POST|DELETE /api/groups/{chat_id}/trusted-hashes`
+- `GET /api/groups/{chat_id}/incidents`
+- `POST /api/incidents/{token_or_key}/action`
+- `GET /api/groups/{chat_id}/risk`
+- `GET /api/groups/{chat_id}/admins`
+- `GET /api/groups/{chat_id}/health`
+- `POST /api/feedback`
+- `GET /api/developer/overview`
+- `GET /api/developer/users`
+- `GET /api/developer/groups`
+- `GET /api/developer/feedback`
+- `GET|PATCH /api/developer/runtime-config`
+
+## Backend requirements
+
+Your backend should:
+
+1. Validate Telegram `initData` on every protected API request.
+2. Return only groups/channels already known or linked with the bot.
+3. Enable CORS for the deployed Mini App domain.
+4. Return `401` for expired/invalid Telegram sessions.
+5. Return `403` for users who are not group admins or not the developer owner.
+6. Include developer/owner status in `POST /api/auth/session` so the frontend can show the Developer Dashboard.
+
+## Render static deploy
+
+Use these settings for a Render Static Site:
+
+```txt
+Build command: npm install && npm run build
+Publish directory: dist
+Environment variable: VITE_API_BASE=https://exe-file-remover.onrender.com
+```
+
+This repository also includes `render.yaml` for Blueprint deploys.
+
+## Connect as Telegram Mini App
+
+1. Deploy the frontend to an HTTPS URL.
+2. In BotFather, configure your bot's Web App / Mini App URL to the deployed frontend URL.
+3. Add a bot menu button or inline keyboard button that opens the Mini App.
+4. In the backend, verify `initData` using the bot token before creating a session.
+5. Add your frontend domain to backend CORS allowed origins.
+6. Test from Telegram mobile and desktop. Browser-only access will not have `window.Telegram.WebApp.initData`.
+
+## Notes
+
+- The app does not invent fake groups or channels.
+- Empty states are shown until the backend returns data.
+- Telegram BackButton and MainButton are integrated.
+- Telegram haptic feedback is used on save, scan, and destructive actions.
+- The UI maps Telegram theme colors into Tailwind/shadcn CSS variables.
+# exe-file-remover-dashbord
