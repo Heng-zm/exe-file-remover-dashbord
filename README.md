@@ -148,3 +148,21 @@ This repository also includes `render.yaml` for Blueprint deploys.
 - Telegram BackButton and MainButton are integrated.
 - Telegram haptic feedback is used on save, scan, and destructive actions.
 - The UI maps Telegram theme colors into Tailwind/shadcn CSS variables.
+
+## Blank screen / Telegram webview fix
+
+This build includes a native HTML boot fallback and a React error boundary. If Telegram or Vercel fails to load the JavaScript bundle, the Mini App will now show a visible error card instead of a blank screen.
+
+When redeploying on Vercel:
+
+1. Upload this fixed project.
+2. Go to Vercel project → Deployments → Redeploy.
+3. Enable **Clear Build Cache**.
+4. Confirm these settings:
+   - Install Command: `npm ci --production=false --no-audit --no-fund --legacy-peer-deps`
+   - Build Command: `npm run build`
+   - Output Directory: `dist`
+   - Environment: `VITE_API_BASE=https://exe-file-remover.onrender.com`
+5. Open the app from a real Telegram Mini App button, not a normal URL button. Use BotFather menu button or a Telegram keyboard button with `web_app`, otherwise Telegram may not provide `initData`.
+
+If it still shows an error, copy the exact visible error message from the card. The app no longer hides startup errors.

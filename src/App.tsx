@@ -2,6 +2,7 @@ import { HashRouter, Route, Routes } from "react-router-dom";
 import { AppShell } from "@/components/layout/AppShell";
 import { Toaster } from "@/components/ui/sonner";
 import { LoadingScreen } from "@/components/common/LoadingScreen";
+import { ErrorBoundary } from "@/components/common/ErrorBoundary";
 import { AuthProvider, useAuth } from "@/hooks/useAuth";
 import { useTelegram } from "@/hooks/useTelegram";
 import { Dashboard } from "@/pages/Dashboard";
@@ -36,11 +37,13 @@ function AppRoutes() {
 
 export default function App() {
   return (
-    <AuthProvider>
-      <HashRouter>
-        <AppRoutes />
-        <Toaster position="top-center" richColors closeButton />
-      </HashRouter>
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <HashRouter>
+          <AppRoutes />
+          <Toaster position="top-center" richColors closeButton />
+        </HashRouter>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }
