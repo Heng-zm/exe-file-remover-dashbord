@@ -7,7 +7,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScanResultBadge } from "@/components/common/StatusBadge";
-import { apiFetch, ScanNameResult } from "@/lib/api";
+import { apiFetch, ScanNameResponse, ScanNameResult } from "@/lib/api";
 import { haptic } from "@/lib/telegram";
 import { safeText } from "@/lib/utils";
 
@@ -26,9 +26,10 @@ export function ScannerTest() {
     setLoading(true);
     setResult(null);
     try {
-      const response = await apiFetch<ScanNameResult>("/api/scan/name", { method: "POST", body: { filename: clean, name: clean } });
-      setResult(response || {});
-      haptic(response?.blocked ? "warning" : "success");
+      const response = await apiFetch<ScanNameResponse>("/api/scan/name", { method: "POST", body: { file_name: clean, mime_type: "application/octet-stream" } });
+      const scanResult = response?.scan || response || {};
+      setResult(scanResult);
+      haptic(scanResult?.blocked ? "warning" : "success");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Scan failed");
       haptic("error");
@@ -80,7 +81,7 @@ export function ScannerTest() {
             <ResultRow label="Status" value={result.status || (result.blocked ? "blocked" : "safe")} />
             <ResultRow label="Matched extension" value={result.matched_extension || result.extension} />
             <div className="sm:col-span-2">
-              <ResultRow label="Reason" value={result.reason} />
+              <ResultRow label="Reason" value={result.reason_display || result.reason || result.reason_code} />
             </div>
           </CardContent>
         </Card>

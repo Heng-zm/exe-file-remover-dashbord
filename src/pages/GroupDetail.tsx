@@ -155,13 +155,13 @@ function OverviewTab({ chatId, group, onSaved }: { chatId: string; group: GroupD
     protection_enabled: normalizeBool(group.settings?.protection_enabled ?? group.protection_enabled ?? group.protected, true),
     strictness: safeText(group.settings?.strictness ?? group.strictness, "standard"),
     silent_mode: normalizeBool(group.settings?.silent_mode ?? group.silent_mode, false),
-    auto_action: safeText(group.settings?.auto_action, "none"),
+    auto_action_mode: safeText(group.settings?.auto_action_mode ?? group.settings?.auto_action, "off"),
   };
   const [settings, setSettings] = useState(initial);
   const [saving, setSaving] = useState(false);
   const dirty = JSON.stringify(settings) !== JSON.stringify(initial);
 
-  useEffect(() => setSettings(initial), [group.chat_id, group.settings?.strictness, group.settings?.silent_mode, group.settings?.protection_enabled]);
+  useEffect(() => setSettings(initial), [group.chat_id, group.settings?.strictness, group.settings?.silent_mode, group.settings?.protection_enabled, group.settings?.auto_action_mode]);
 
   const save = async () => {
     setSaving(true);
@@ -171,7 +171,7 @@ function OverviewTab({ chatId, group, onSaved }: { chatId: string; group: GroupD
         strictness: settings.strictness,
         silent_mode: settings.silent_mode,
       };
-      if (settings.auto_action !== "none") payload.auto_action = settings.auto_action;
+      if (settings.auto_action_mode !== "off") payload.auto_action_mode = settings.auto_action_mode;
       await apiFetch(`/api/groups/${encodeURIComponent(chatId)}/settings`, { method: "PATCH", body: payload });
       haptic("success");
       toast.success("Group settings saved");
@@ -186,7 +186,7 @@ function OverviewTab({ chatId, group, onSaved }: { chatId: string; group: GroupD
 
   useEffect(() => {
     return configureMainButton({ text: saving ? "Saving…" : "Save Settings", visible: dirty, loading: saving, disabled: saving, onClick: save });
-  }, [dirty, saving, settings.protection_enabled, settings.strictness, settings.silent_mode, settings.auto_action]);
+  }, [dirty, saving, settings.protection_enabled, settings.strictness, settings.silent_mode, settings.auto_action_mode]);
 
   return (
     <Card>
@@ -198,7 +198,7 @@ function OverviewTab({ chatId, group, onSaved }: { chatId: string; group: GroupD
         <SettingRow title="Protection enabled" description="Delete and moderate dangerous executable files.">
           <Switch checked={settings.protection_enabled} onCheckedChange={(value) => setSettings((current) => ({ ...current, protection_enabled: value }))} />
         </SettingRow>
-        <SettingRow title="Strictness" description="Standard blocks executables. High blocks more risky extensions.">
+        <SettingRow title="Strictness" description="Standard blocks executables. High/Strict block more risky extensions.">
           <Select value={settings.strictness} onValueChange={(value) => setSettings((current) => ({ ...current, strictness: value }))}>
             <SelectTrigger className="w-44">
               <SelectValue placeholder="Strictness" />
@@ -206,21 +206,22 @@ function OverviewTab({ chatId, group, onSaved }: { chatId: string; group: GroupD
             <SelectContent>
               <SelectItem value="standard">Standard</SelectItem>
               <SelectItem value="high">High</SelectItem>
+              <SelectItem value="strict">Strict</SelectItem>
             </SelectContent>
           </Select>
         </SettingRow>
         <SettingRow title="Silent mode" description="Remove blocked files without noisy messages in the group.">
           <Switch checked={settings.silent_mode} onCheckedChange={(value) => setSettings((current) => ({ ...current, silent_mode: value }))} />
         </SettingRow>
-        <SettingRow title="Auto action" description="Optional if your backend supports warn/restrict/ban actions.">
-          <Select value={settings.auto_action} onValueChange={(value) => setSettings((current) => ({ ...current, auto_action: value }))}>
+        <SettingRow title="Auto action" description="Optional automated follow-up mode returned by the API: off, warn, smart, or ban.">
+          <Select value={settings.auto_action_mode} onValueChange={(value) => setSettings((current) => ({ ...current, auto_action_mode: value }))}>
             <SelectTrigger className="w-44">
               <SelectValue placeholder="Auto action" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="none">None</SelectItem>
+              <SelectItem value="off">Off</SelectItem>
               <SelectItem value="warn">Warn</SelectItem>
-              <SelectItem value="restrict">Restrict</SelectItem>
+              <SelectItem value="smart">Smart</SelectItem>
               <SelectItem value="ban">Ban</SelectItem>
             </SelectContent>
           </Select>
@@ -279,7 +280,7 @@ function FormatSection({ chatId, kind, title, description }: { chatId: string; k
   const [busy, setBusy] = useState(false);
   const endpoint = `/api/groups/${encodeURIComponent(chatId)}/formats/${kind}`;
   const query = useApi<unknown>(() => apiFetch(endpoint), [endpoint]);
-  const items = listFromResponse<FormatItem | string>(query.data, ["formats", kind, "items", "data"]);
+  const items = listFromResponse<FormatItem | string>(query.data, ["extensions", "formats", kind, "items", "data"]);
 
   const add = async () => {
     const clean = ext.trim().toLowerCase();
@@ -290,7 +291,7 @@ function FormatSection({ chatId, kind, title, description }: { chatId: string; k
     }
     setBusy(true);
     try {
-      await apiFetch(endpoint, { method: "POST", body: { ext: clean, extension: clean } });
+      await apiFetch(endpoint, { method: "POST", body: { mode: "append", extensions: [clean] } });
       toast.success(`${clean} added`);
       haptic("success");
       setExt("");
@@ -304,9 +305,11 @@ function FormatSection({ chatId, kind, title, description }: { chatId: string; k
   };
 
   const remove = async (value: string) => {
+    const nextExtensions = items.map(formatText).filter((item) => item && item !== value);
     setBusy(true);
     try {
-      await apiFetch(`${endpoint}/${encodeURIComponent(value)}`, { method: "DELETE" });
+      // README_API exposes POST append/replace for formats. Removing one item is done by replacing the list.
+      await apiFetch(endpoint, { method: "POST", body: { mode: "replace", extensions: nextExtensions } });
       toast.success(`${value} removed`);
       haptic("success");
       await query.refetch();
@@ -366,7 +369,7 @@ function TrustedHashesPanel({ chatId }: { chatId: string }) {
     }
     setBusy(true);
     try {
-      await apiFetch(endpoint, { method: "POST", body: { digest: clean, hash: clean, label: note, note } });
+      await apiFetch(endpoint, { method: "POST", body: { ...(clean.length === 64 ? { sha256: clean } : { md5: clean }), digest: clean, label: note, note } });
       toast.success("Trusted hash added");
       haptic("success");
       setDigest("");
@@ -415,7 +418,7 @@ function TrustedHashesPanel({ chatId }: { chatId: string }) {
         {query.loading ? <Skeleton className="h-32" /> : query.error ? <Alert variant="warning"><AlertTitle>Cannot load hashes</AlertTitle><AlertDescription>{query.error}</AlertDescription></Alert> : hashes.length ? (
           <div className="space-y-2">
             {hashes.map((hash) => {
-              const value = safeText(hash.digest || hash.hash);
+              const value = safeText(hash.digest || hash.hash || hash.sha256 || hash.md5);
               return (
                 <div key={value} className="flex flex-col gap-3 rounded-2xl border p-4 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0">
@@ -434,12 +437,12 @@ function TrustedHashesPanel({ chatId }: { chatId: string }) {
 }
 
 function IncidentsPanel({ chatId }: { chatId: string }) {
-  const endpoint = `/api/groups/${encodeURIComponent(chatId)}/incidents`;
+  const endpoint = `/api/groups/${encodeURIComponent(chatId)}/incidents?status=all&limit=50`;
   const query = useApi<unknown>(() => apiFetch(endpoint), [endpoint]);
   const incidents = listFromResponse<Incident>(query.data, ["incidents", "items", "data"]);
 
   const act = async (incident: Incident, action: "warn" | "ban" | "ignore") => {
-    const token = String(incident.token || incident.key || incident.id || "");
+    const token = String(incident.token_or_key || incident.token || incident.incident_token || incident.key || incident.id || "");
     if (!token) return toast.error("Incident action token missing");
     try {
       await apiFetch(`/api/incidents/${encodeURIComponent(token)}/action`, { method: "POST", body: { action } });
@@ -476,8 +479,8 @@ function IncidentsPanel({ chatId }: { chatId: string }) {
                 <TableRow key={String(incident.id || incident.key || index)}>
                   <TableCell className="font-medium">{safeText(incident.file_name || incident.filename)}</TableCell>
                   <TableCell>{safeText(incident.sender || incident.sender_name || incident.user_id)}</TableCell>
-                  <TableCell>{safeText(incident.reason)}</TableCell>
-                  <TableCell>{formatDateTime(incident.created_at || incident.time)}</TableCell>
+                  <TableCell>{safeText(incident.reason_display || incident.reason)}</TableCell>
+                  <TableCell>{formatDateTime(incident.created_at || incident.time || incident.ts)}</TableCell>
                   <TableCell><Badge variant="secondary">{safeText(incident.status, "open")}</Badge></TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-2">
@@ -600,7 +603,7 @@ function HealthPanel({ chatId, fallback }: { chatId: string; fallback?: HealthSt
 }
 
 function LogsPanel({ chatId }: { chatId: string }) {
-  const endpoint = `/api/groups/${encodeURIComponent(chatId)}/logs`;
+  const endpoint = `/api/groups/${encodeURIComponent(chatId)}/admin-logs`;
   const query = useApi<unknown>(() => apiFetch(endpoint), [endpoint]);
   const logs = listFromResponse<Record<string, unknown>>(query.data, ["logs", "items", "data"]);
 
@@ -620,7 +623,7 @@ function LogsPanel({ chatId }: { chatId: string }) {
               </div>
             ))}
           </div>
-        ) : <EmptyState title="No logs returned" description="Connect /api/groups/{chat_id}/logs to show backend events here." icon={ScrollText} />}
+        ) : <EmptyState title="No logs returned" description="Connect /api/groups/{chat_id}/admin-logs to show backend events here." icon={ScrollText} />}
       </CardContent>
     </Card>
   );

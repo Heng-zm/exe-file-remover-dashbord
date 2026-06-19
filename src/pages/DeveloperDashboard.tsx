@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
-import { Code2, Database, MessageSquareText, ServerCog, ShieldCheck, UsersRound } from "lucide-react";
+import { Code2, Database, MessageSquareText, RefreshCw, ScrollText, ServerCog, ShieldCheck, Trash2, UsersRound } from "lucide-react";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { EmptyState } from "@/components/common/EmptyState";
 import { StatCard } from "@/components/common/StatCard";
-import { apiFetch, DeveloperOverview, RuntimeConfig } from "@/lib/api";
+import { apiFetch, DeveloperOverview, RuntimeConfig, ServerLogRow, ServerLogsResponse } from "@/lib/api";
 import { compactId, formatDateTime, listFromResponse, normalizeBool, safeNumber, safeText } from "@/lib/utils";
 import { haptic } from "@/lib/telegram";
 import { useAuth } from "@/hooks/useAuth";
@@ -52,6 +52,7 @@ export function DeveloperDashboard() {
             <TabsTrigger value="groups">Groups</TabsTrigger>
             <TabsTrigger value="feedback">Feedback</TabsTrigger>
             <TabsTrigger value="runtime">Runtime Config</TabsTrigger>
+            <TabsTrigger value="logs">Server Logs</TabsTrigger>
           </TabsList>
         </div>
         <TabsContent value="overview"><DeveloperOverviewPanel /></TabsContent>
@@ -59,6 +60,7 @@ export function DeveloperDashboard() {
         <TabsContent value="groups"><DeveloperTable endpoint="/api/developer/groups" title="Bot groups" itemKeys={["groups", "items", "data"]} /></TabsContent>
         <TabsContent value="feedback"><FeedbackList /></TabsContent>
         <TabsContent value="runtime"><RuntimeConfigEditor /></TabsContent>
+        <TabsContent value="logs"><ServerLogsPanel /></TabsContent>
       </Tabs>
     </div>
   );
@@ -130,7 +132,7 @@ function FeedbackList() {
                   <span className="text-xs text-muted-foreground">{formatDateTime(item.created_at || item.time)}</span>
                   <span className="text-xs text-muted-foreground">User: {compactId(item.user_id || item.telegram_id)}</span>
                 </div>
-                <p className="mt-3 whitespace-pre-wrap text-sm">{safeText(item.message)}</p>
+                <p className="mt-3 whitespace-pre-wrap text-sm">{safeText(item.text || item.message)}</p>
               </div>
             ))}
           </div>
@@ -152,7 +154,14 @@ function RuntimeConfigEditor() {
   const save = async () => {
     setSaving(true);
     try {
-      await apiFetch("/api/developer/runtime-config", { method: "PATCH", body: config });
+      await apiFetch("/api/developer/runtime-config", {
+        method: "PATCH",
+        body: {
+          trusted_file_hash_whitelist_enabled: normalizeBool(config.trusted_file_hash_whitelist_enabled ?? config.trusted_hash_whitelist_enabled),
+          trusted_hash_max_download_bytes: safeNumber(config.trusted_hash_max_download_bytes ?? config.max_hash_file_size),
+          max_trusted_file_hashes: safeNumber(config.max_trusted_file_hashes ?? config.max_hashes_per_group),
+        },
+      });
       toast.success("Runtime config updated");
       haptic("success");
       await query.refetch();
@@ -179,14 +188,75 @@ function RuntimeConfigEditor() {
             <p className="font-bold">Trusted hash whitelist enabled</p>
             <p className="text-sm text-muted-foreground">Enable exact-file approvals by digest.</p>
           </div>
-          <Switch checked={normalizeBool(config.trusted_hash_whitelist_enabled)} onCheckedChange={(value) => setConfig((current) => ({ ...current, trusted_hash_whitelist_enabled: value }))} />
+          <Switch checked={normalizeBool(config.trusted_file_hash_whitelist_enabled ?? config.trusted_hash_whitelist_enabled)} onCheckedChange={(value) => setConfig((current) => ({ ...current, trusted_file_hash_whitelist_enabled: value, trusted_hash_whitelist_enabled: value }))} />
         </div>
-        <RuntimeNumber label="Max hash file size" value={config.max_hash_file_size ?? config.trusted_hash_max_download_bytes} onChange={(value) => setConfig((current) => ({ ...current, max_hash_file_size: value, trusted_hash_max_download_bytes: value }))} />
-        <RuntimeNumber label="Max hashes per group" value={config.max_hashes_per_group ?? config.max_trusted_file_hashes} onChange={(value) => setConfig((current) => ({ ...current, max_hashes_per_group: value, max_trusted_file_hashes: value }))} />
+        <RuntimeNumber label="Max hash file size" value={config.trusted_hash_max_download_bytes ?? config.max_hash_file_size} onChange={(value) => setConfig((current) => ({ ...current, trusted_hash_max_download_bytes: value, max_hash_file_size: value }))} />
+        <RuntimeNumber label="Max hashes per group" value={config.max_trusted_file_hashes ?? config.max_hashes_per_group} onChange={(value) => setConfig((current) => ({ ...current, max_trusted_file_hashes: value, max_hashes_per_group: value }))} />
         <Button onClick={save} disabled={saving}>
           <ServerCog className="mr-2 h-4 w-4" />
           {saving ? "Saving…" : "Save runtime config"}
         </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+
+function ServerLogsPanel() {
+  const [level, setLevel] = useState("all");
+  const endpoint = `/api/server/log?limit=200&level=${encodeURIComponent(level)}&category=all&since_id=0`;
+  const query = useApi<ServerLogsResponse>(() => apiFetch(endpoint), [endpoint]);
+  const logs = (query.data?.logs || []) as ServerLogRow[];
+
+  const clear = async () => {
+    try {
+      await apiFetch("/api/server/log", { method: "DELETE" });
+      toast.success("Server logs cleared");
+      haptic("success");
+      await query.refetch();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Unable to clear logs");
+      haptic("error");
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <CardTitle>Server/API logs</CardTitle>
+            <CardDescription>Owner-only /api/server/log output with redacted secrets.</CardDescription>
+          </div>
+          <div className="flex gap-2">
+            <select value={level} onChange={(event) => setLevel(event.target.value)} className="h-10 rounded-md border bg-background px-3 text-sm">
+              <option value="all">All</option>
+              <option value="info">Info</option>
+              <option value="warning">Warning</option>
+              <option value="error">Error</option>
+            </select>
+            <Button variant="outline" size="icon" onClick={() => void query.refetch()} aria-label="Refresh logs"><RefreshCw className="h-4 w-4" /></Button>
+            <Button variant="outline" size="icon" onClick={clear} aria-label="Clear logs"><Trash2 className="h-4 w-4" /></Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        {query.loading ? <Skeleton className="h-72" /> : query.error ? <Alert variant="warning"><AlertTitle>Cannot load server logs</AlertTitle><AlertDescription>{query.error}</AlertDescription></Alert> : logs.length ? (
+          <div className="space-y-2">
+            {logs.map((log, index) => (
+              <div key={String(log.id || index)} className="rounded-2xl border p-4">
+                <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                  <Badge variant={String(log.level || "info").toLowerCase() === "error" ? "danger" : "secondary"}>{safeText(log.level, "info")}</Badge>
+                  <span>{safeText(log.category, "server")}</span>
+                  <span>{formatDateTime(log.ts)}</span>
+                  {log.status ? <span>HTTP {log.status}</span> : null}
+                  {log.duration_ms ? <span>{safeNumber(log.duration_ms).toFixed(1)}ms</span> : null}
+                </div>
+                <p className="mt-2 break-words font-mono text-xs">{safeText(log.message || log.path || JSON.stringify(log))}</p>
+              </div>
+            ))}
+          </div>
+        ) : <EmptyState title="No server logs" description="No logs were returned for this filter." icon={ScrollText} />}
       </CardContent>
     </Card>
   );

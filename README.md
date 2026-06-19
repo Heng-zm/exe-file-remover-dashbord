@@ -21,7 +21,7 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Open the local URL from Telegram only when testing Telegram auth. Outside Telegram, the app intentionally shows:
+Open the app from Telegram. Outside Telegram, the app intentionally shows:
 
 ```txt
 Please open this app from Telegram.
@@ -30,6 +30,8 @@ Please open this app from Telegram.
 ## Environment
 
 ```env
+VITE_API_BASE_URL=https://exe-file-remover.onrender.com
+# Optional backward-compatible alias:
 VITE_API_BASE=https://exe-file-remover.onrender.com
 ```
 
@@ -41,6 +43,33 @@ Vite exposes only `VITE_*` variables to the browser bundle, so do not put secret
 npm run build
 npm run preview
 ```
+
+## API integration updated from README_API
+
+All protected requests go through `src/lib/api.ts`.
+
+Every protected request now sends the API guide's preferred header plus backward-compatible aliases:
+
+```http
+X-Telegram-Init-Data: <window.Telegram.WebApp.initData>
+X-TMA-Init-Data: <window.Telegram.WebApp.initData>
+X-Telegram-Web-App-Data: <window.Telegram.WebApp.initData>
+Authorization: tma <window.Telegram.WebApp.initData>
+Content-Type: application/json
+```
+
+Important updates included:
+
+- First session call uses `POST /api/bootstrap` with `{}` body.
+- API base supports `VITE_API_BASE_URL` and legacy `VITE_API_BASE`.
+- Scanner sends `{ file_name, mime_type }` to `POST /api/scan/name` and reads nested `response.scan`.
+- Formats use `POST /api/groups/{chat_id}/formats/{allowed|blocked}` with `{ mode: "append"|"replace", extensions: [...] }`.
+- Individual format removal is implemented by replacing the extension list because the API guide exposes POST append/replace, not DELETE per extension.
+- Group settings support `strictness: standard | high | strict` and `auto_action_mode: off | warn | smart | ban`.
+- Feedback sends `{ text }` to `POST /api/feedback`.
+- Group Logs tab uses `/api/groups/{chat_id}/admin-logs`.
+- Developer dashboard includes owner-only `/api/server/log` reader and clear action.
+- Runtime config patch sends `trusted_file_hash_whitelist_enabled`, `trusted_hash_max_download_bytes`, and `max_trusted_file_hashes`.
 
 ## shadcn setup commands
 
@@ -56,54 +85,21 @@ npx shadcn@latest add button card badge tabs dialog sheet dropdown-menu input la
 npm install lucide-react react-router-dom sonner
 ```
 
-## API integration
-
-All requests go through `src/lib/api.ts`.
-
-Every request sends:
-
-```ts
-Authorization: `tma ${window.Telegram.WebApp.initData}`
-Content-Type: application/json
-```
-
-Important endpoints used:
-
-- `POST /api/auth/session`
-- `GET /api/me/groups`
-- `GET /api/groups/{chat_id}`
-- `PATCH /api/groups/{chat_id}/settings`
-- `POST /api/scan/name`
-- `GET|POST|DELETE /api/groups/{chat_id}/formats/allowed`
-- `GET|POST|DELETE /api/groups/{chat_id}/formats/blocked`
-- `GET|POST|DELETE /api/groups/{chat_id}/trusted-hashes`
-- `GET /api/groups/{chat_id}/incidents`
-- `POST /api/incidents/{token_or_key}/action`
-- `GET /api/groups/{chat_id}/risk`
-- `GET /api/groups/{chat_id}/admins`
-- `GET /api/groups/{chat_id}/health`
-- `POST /api/feedback`
-- `GET /api/developer/overview`
-- `GET /api/developer/users`
-- `GET /api/developer/groups`
-- `GET /api/developer/feedback`
-- `GET|PATCH /api/developer/runtime-config`
-
 ## Backend requirements
 
 Your backend should:
 
-1. Validate Telegram `initData` on every protected API request.
-2. Return only groups/channels already known or linked with the bot.
-3. Enable CORS for the deployed Mini App domain.
-4. Return `401` for expired/invalid Telegram sessions.
-5. Return `403` for users who are not group admins or not the developer owner.
-6. Include developer/owner status in `POST /api/auth/session` so the frontend can show the Developer Dashboard.
-
+1. Set `MINI_APP_API_ENABLED=true`.
+2. Validate signed Telegram `window.Telegram.WebApp.initData` with the bot token.
+3. Return only groups/channels already known or linked with the bot.
+4. Enable CORS for the deployed Mini App domain with `MINI_APP_CORS_ORIGINS`.
+5. Return `401` for expired/invalid Telegram sessions.
+6. Return `403` for users who are not group admins or not in `BOT_OWNER_IDS`.
+7. Include `is_developer` in `/api/bootstrap` so the frontend can show the Developer Dashboard.
 
 ## Vercel static deploy
 
-This project includes `vercel.json` to avoid the npm install crash seen on Vercel. It uses:
+This project includes `vercel.json`:
 
 ```txt
 Install Command: npm ci --production=false --no-audit --no-fund --legacy-peer-deps
@@ -115,10 +111,10 @@ Node Version: 20.x
 Set this environment variable in Vercel:
 
 ```env
-VITE_API_BASE=https://exe-file-remover.onrender.com
+VITE_API_BASE_URL=https://exe-file-remover.onrender.com
 ```
 
-If Vercel still shows `npm error Exit handler never called`, redeploy with **Clear Build Cache**. Do not upload a lockfile that contains private/internal registry URLs.
+If Vercel still shows `npm error Exit handler never called`, redeploy with **Clear Build Cache**.
 
 ## Render static deploy
 
@@ -127,7 +123,7 @@ Use these settings for a Render Static Site:
 ```txt
 Build command: npm install && npm run build
 Publish directory: dist
-Environment variable: VITE_API_BASE=https://exe-file-remover.onrender.com
+Environment variable: VITE_API_BASE_URL=https://exe-file-remover.onrender.com
 ```
 
 This repository also includes `render.yaml` for Blueprint deploys.
@@ -135,23 +131,15 @@ This repository also includes `render.yaml` for Blueprint deploys.
 ## Connect as Telegram Mini App
 
 1. Deploy the frontend to an HTTPS URL.
-2. In BotFather, configure your bot's Web App / Mini App URL to the deployed frontend URL.
-3. Add a bot menu button or inline keyboard button that opens the Mini App.
-4. In the backend, verify `initData` using the bot token before creating a session.
-5. Add your frontend domain to backend CORS allowed origins.
+2. In BotFather, configure your bot's Mini App URL to the deployed frontend URL.
+3. Add a bot menu button or inline keyboard button with `web_app` that opens the Mini App.
+4. In the backend, verify signed `initData` using the same bot token.
+5. Add your frontend domain to `MINI_APP_CORS_ORIGINS`.
 6. Test from Telegram mobile and desktop. Browser-only access will not have `window.Telegram.WebApp.initData`.
-
-## Notes
-
-- The app does not invent fake groups or channels.
-- Empty states are shown until the backend returns data.
-- Telegram BackButton and MainButton are integrated.
-- Telegram haptic feedback is used on save, scan, and destructive actions.
-- The UI maps Telegram theme colors into Tailwind/shadcn CSS variables.
 
 ## Blank screen / Telegram webview fix
 
-This build includes a native HTML boot fallback and a React error boundary. If Telegram or Vercel fails to load the JavaScript bundle, the Mini App will now show a visible error card instead of a blank screen.
+This build includes a native HTML boot fallback and a React error boundary. If Telegram or Vercel fails to load the JavaScript bundle, the Mini App shows a visible error card instead of a blank screen.
 
 When redeploying on Vercel:
 
@@ -162,7 +150,13 @@ When redeploying on Vercel:
    - Install Command: `npm ci --production=false --no-audit --no-fund --legacy-peer-deps`
    - Build Command: `npm run build`
    - Output Directory: `dist`
-   - Environment: `VITE_API_BASE=https://exe-file-remover.onrender.com`
-5. Open the app from a real Telegram Mini App button, not a normal URL button. Use BotFather menu button or a Telegram keyboard button with `web_app`, otherwise Telegram may not provide `initData`.
+   - Environment: `VITE_API_BASE_URL=https://exe-file-remover.onrender.com`
+5. Open the app from a real Telegram Mini App button, not a normal URL button.
 
-If it still shows an error, copy the exact visible error message from the card. The app no longer hides startup errors.
+## Notes
+
+- The app does not invent fake groups or channels.
+- Empty states are shown until the backend returns data.
+- Telegram BackButton and MainButton are integrated.
+- Telegram haptic feedback is used on save, scan, and destructive actions.
+- The UI maps Telegram theme colors into Tailwind/shadcn CSS variables.

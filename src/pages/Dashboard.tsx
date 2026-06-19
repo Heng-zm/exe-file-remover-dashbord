@@ -17,9 +17,11 @@ export function Dashboard() {
   const { user, session, isDeveloper } = useAuth();
   const telegram = useTelegram();
   const groupsQuery = useApi<unknown>(() => apiFetch("/api/me/groups"), []);
-  const groups = listFromResponse<GroupSummary>(groupsQuery.data, ["groups", "items", "data"]);
+  const apiGroups = listFromResponse<GroupSummary>(groupsQuery.data, ["groups", "items", "data"]);
+  const sessionGroups = listFromResponse<GroupSummary>(session, ["groups"]);
+  const groups = apiGroups.length ? apiGroups : sessionGroups;
   const stats = session?.stats || {};
-  const linkedGroups = stats.linked_groups ?? groups.length;
+  const linkedGroups = session?.linked_group_count ?? stats.linked_group_count ?? stats.linked_groups ?? groups.length;
   const protectedGroups = stats.protected_groups ?? groups.filter((group) => normalizeBool(group.protection_enabled ?? group.protected)).length;
 
   return (
@@ -54,6 +56,7 @@ export function Dashboard() {
             <ProfileRow label="First name" value={user?.first_name || telegram.user?.first_name} />
             <ProfileRow label="Last name" value={user?.last_name || telegram.user?.last_name} />
             <ProfileRow label="Language" value={user?.language || user?.language_code || telegram.user?.language_code} />
+            <ProfileRow label="Can write to bot" value={normalizeBool(user?.allows_write_to_pm) ? "Yes" : "Unknown"} />
             <ProfileRow label="Platform" value={telegram.platform} />
             <ProfileRow label="Start parameter" value={user?.start_param || telegram.startParam} />
           </div>

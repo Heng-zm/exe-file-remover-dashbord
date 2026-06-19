@@ -23,7 +23,7 @@ export function Feedback() {
     }
     setLoading(true);
     try {
-      await apiFetch("/api/feedback", { method: "POST", body: { category, message: message.trim() } });
+      await apiFetch("/api/feedback", { method: "POST", body: { text: `[${category}] ${message.trim()}`, category } });
       toast.success("Feedback sent. Thank you!");
       haptic("success");
       setMessage("");
