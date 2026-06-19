@@ -1,5 +1,5 @@
-import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { ApiError, AuthSession, createSession, TelegramProfile } from "@/lib/api";
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
+import { ApiError, AuthSession, clearApiCache, createSession, TelegramProfile } from "@/lib/api";
 import { isTelegramWebApp } from "@/lib/telegram";
 import { normalizeBool } from "@/lib/utils";
 
@@ -9,7 +9,7 @@ type AuthContextValue = {
   session: AuthSession | null;
   user: TelegramProfile | null;
   isDeveloper: boolean;
-  refresh: () => Promise<void>;
+  refresh: (liveRefresh?: boolean) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -28,7 +28,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [session, setSession] = useState<AuthSession | null>(null);
 
-  const refresh = async () => {
+  const refresh = useCallback(async (liveRefresh = false) => {
     setLoading(true);
     setError(null);
     try {
@@ -37,19 +37,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         setError("Please open this app from Telegram.");
         return;
       }
-      const nextSession = await createSession();
+      if (liveRefresh) clearApiCache();
+      const nextSession = await createSession(liveRefresh);
       setSession(nextSession || {});
     } catch (err) {
       if (err instanceof ApiError) setError(err.message);
-      else setError("Unable to connect to Telegram session.");
+      else setError(err instanceof Error ? err.message : "Unable to connect to Telegram session.");
     } finally {
       setLoading(false);
     }
-  };
+  }, []);
 
   useEffect(() => {
-    void refresh();
-  }, []);
+    void refresh(false);
+  }, [refresh]);
 
   const value = useMemo(() => {
     const user = extractUser(session);
@@ -61,7 +62,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isDeveloper: extractDeveloper(session, user),
       refresh,
     };
-  }, [loading, error, session]);
+  }, [loading, error, session, refresh]);
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

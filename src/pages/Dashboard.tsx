@@ -16,10 +16,11 @@ import { useTelegram } from "@/hooks/useTelegram";
 export function Dashboard() {
   const { user, session, isDeveloper } = useAuth();
   const telegram = useTelegram();
-  const groupsQuery = useApi<unknown>(() => apiFetch("/api/me/groups"), []);
-  const apiGroups = listFromResponse<GroupSummary>(groupsQuery.data, ["groups", "items", "data"]);
   const sessionGroups = listFromResponse<GroupSummary>(session, ["groups"]);
-  const groups = apiGroups.length ? apiGroups : sessionGroups;
+  const shouldFetchGroups = sessionGroups.length === 0;
+  const groupsQuery = useApi<unknown>(() => apiFetch("/api/me/groups"), [shouldFetchGroups], shouldFetchGroups);
+  const apiGroups = listFromResponse<GroupSummary>(groupsQuery.data, ["groups", "items", "data"]);
+  const groups = sessionGroups.length ? sessionGroups : apiGroups;
   const stats = session?.stats || {};
   const linkedGroups = session?.linked_group_count ?? stats.linked_group_count ?? stats.linked_groups ?? groups.length;
   const protectedGroups = stats.protected_groups ?? groups.filter((group) => normalizeBool(group.protection_enabled ?? group.protected)).length;
@@ -83,7 +84,7 @@ export function Dashboard() {
         </CardContent>
       </Card>
 
-      {groupsQuery.error ? (
+      {shouldFetchGroups && groupsQuery.error ? (
         <Alert variant="warning">
           <AlertTitle>Groups could not be loaded</AlertTitle>
           <AlertDescription>{groupsQuery.error}</AlertDescription>

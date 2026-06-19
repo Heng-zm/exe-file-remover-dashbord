@@ -77,3 +77,15 @@ export function extensionIsValid(value: string) {
 export function hashIsValid(value: string) {
   return /^[a-f0-9]{32}$/i.test(value.trim()) || /^[a-f0-9]{64}$/i.test(value.trim());
 }
+
+export function safeDecodeURIComponent(value: string) {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
+export function uniqueStrings(values: string[]) {
+  return Array.from(new Set(values.map((value) => value.trim()).filter(Boolean)));
+}

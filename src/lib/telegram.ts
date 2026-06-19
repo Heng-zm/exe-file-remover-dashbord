@@ -88,9 +88,14 @@ function hexToHsl(hex?: string) {
   const clean = hex.replace("#", "").trim();
   if (![3, 6].includes(clean.length)) return undefined;
   const normalized = clean.length === 3 ? clean.split("").map((c) => c + c).join("") : clean;
-  const r = parseInt(normalized.slice(0, 2), 16) / 255;
-  const g = parseInt(normalized.slice(2, 4), 16) / 255;
-  const b = parseInt(normalized.slice(4, 6), 16) / 255;
+  const red = parseInt(normalized.slice(0, 2), 16);
+  const green = parseInt(normalized.slice(2, 4), 16);
+  const blue = parseInt(normalized.slice(4, 6), 16);
+  if (![red, green, blue].every(Number.isFinite)) return undefined;
+
+  const r = red / 255;
+  const g = green / 255;
+  const b = blue / 255;
   const max = Math.max(r, g, b);
   const min = Math.min(r, g, b);
   let h = 0;
@@ -116,11 +121,19 @@ function hexToHsl(hex?: string) {
   return `${Math.round(h * 360)} ${Math.round(s * 100)}% ${Math.round(l * 100)}%`;
 }
 
+function setThemeColor(hex?: string) {
+  if (!hex) return;
+  const meta = document.querySelector<HTMLMetaElement>('meta[name="theme-color"]');
+  if (meta) meta.content = hex;
+}
+
 export function applyTelegramTheme() {
   const webApp = getTelegramWebApp();
   const root = document.documentElement;
   const params = webApp?.themeParams || {};
-  root.classList.toggle("dark", webApp?.colorScheme === "dark");
+  const dark = webApp?.colorScheme === "dark";
+  root.classList.toggle("dark", dark);
+  setThemeColor(params.bg_color || (dark ? "#0f172a" : "#ffffff"));
 
   const mappings: Array<[string, string | undefined]> = [
     ["--background", hexToHsl(params.bg_color)],
@@ -147,10 +160,13 @@ export function applyTelegramTheme() {
 export function initTelegramApp() {
   const webApp = getTelegramWebApp();
   if (!webApp) return;
-  applyTelegramTheme();
-  webApp.ready();
-  webApp.expand();
-  webApp.onEvent?.("themeChanged", applyTelegramTheme);
+  try {
+    applyTelegramTheme();
+    webApp.ready();
+    webApp.expand();
+  } catch (error) {
+    console.warn("Telegram WebApp init failed", error);
+  }
 }
 
 export function haptic(type: "success" | "warning" | "error" | "light" | "medium" = "light") {
@@ -176,17 +192,26 @@ export function configureMainButton(options: {
 }) {
   const button = getTelegramWebApp()?.MainButton;
   if (!button) return () => undefined;
-  button.setText(options.text);
-  if (options.visible) button.show();
-  else button.hide();
-  if (options.disabled) button.disable();
-  else button.enable();
-  if (options.loading) button.showProgress(true);
-  else button.hideProgress();
-  button.onClick(options.onClick);
+  try {
+    button.setText(options.text);
+    if (options.visible) button.show();
+    else button.hide();
+    if (options.disabled) button.disable();
+    else button.enable();
+    if (options.loading) button.showProgress(true);
+    else button.hideProgress();
+    button.onClick(options.onClick);
+  } catch (error) {
+    console.warn("Telegram MainButton configuration failed", error);
+  }
+
   return () => {
-    button.offClick(options.onClick);
-    button.hideProgress();
-    button.hide();
+    try {
+      button.offClick(options.onClick);
+      button.hideProgress();
+      button.hide();
+    } catch {
+      // Ignore cleanup failures from older Telegram clients.
+    }
   };
 }

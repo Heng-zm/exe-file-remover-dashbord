@@ -41,12 +41,19 @@ export function Header() {
           aria-label="Refresh"
           onClick={() => {
             haptic("light");
-            void refresh();
+            void refresh(true);
           }}
         >
           <RefreshCcw className="h-5 w-5" />
         </Button>
-        <Button size="icon" variant="ghost" aria-label="Alerts">
+        <Button
+          size="icon"
+          variant="ghost"
+          aria-label="Alerts"
+          onClick={() => {
+            haptic("light");
+          }}
+        >
           <Bell className="h-5 w-5" />
         </Button>
         <DropdownMenu>

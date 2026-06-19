@@ -2,6 +2,18 @@ import { getInitData } from "@/lib/telegram";
 
 export const API_BASE = (import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_BASE || "https://exe-file-remover.onrender.com").replace(/\/$/, "");
 
+const DEFAULT_TIMEOUT_MS = 20_000;
+const DEFAULT_GET_CACHE_TTL_MS = 15_000;
+const MAX_RETRIES = 1;
+
+type CacheEntry = {
+  expiresAt: number;
+  value: unknown;
+};
+
+const responseCache = new Map<string, CacheEntry>();
+const inFlightRequests = new Map<string, Promise<unknown>>();
+
 export class ApiError extends Error {
   status: number;
   payload: unknown;
@@ -241,14 +253,31 @@ type ApiFetchOptions = Omit<RequestInit, "body" | "headers"> & {
   body?: unknown;
   headers?: HeadersInit;
   allowNoTelegram?: boolean;
+  timeoutMs?: number;
+  cacheTtlMs?: number;
+  skipCache?: boolean;
+  retry?: number;
 };
 
-function buildHeaders(extra?: HeadersInit) {
+function cloneValue<T>(value: T): T {
+  if (typeof structuredClone === "function") return structuredClone(value);
+  try {
+    return JSON.parse(JSON.stringify(value)) as T;
+  } catch {
+    return value;
+  }
+}
+
+function buildHeaders(extra?: HeadersInit, hasBody = false) {
   const initData = getInitData();
   const headers = new Headers(extra || {});
-  headers.set("Content-Type", "application/json");
+
+  if (hasBody && !headers.has("Content-Type")) {
+    headers.set("Content-Type", "application/json");
+  }
+
   if (initData) {
-    // The API guide prefers X-Telegram-Init-Data; Authorization remains for backward compatibility.
+    // README_API prefers X-Telegram-Init-Data. Extra aliases keep compatibility with older backend builds.
     headers.set("X-Telegram-Init-Data", initData);
     headers.set("X-TMA-Init-Data", initData);
     headers.set("X-Telegram-Web-App-Data", initData);
@@ -276,33 +305,125 @@ function apiMessage(payload: unknown) {
   return "";
 }
 
+async function parseResponse(response: Response) {
+  if (response.status === 204) return {};
+  const contentType = response.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) return response.json().catch(() => ({}));
+  const text = await response.text().catch(() => "");
+  return text ? { message: text } : {};
+}
+
+function getCacheKey(method: string, url: string, body: unknown) {
+  if (method !== "GET" || body !== undefined) return "";
+  return `${method}:${url}`;
+}
+
+export function clearApiCache(prefix?: string) {
+  if (!prefix) {
+    responseCache.clear();
+    inFlightRequests.clear();
+    return;
+  }
+  for (const key of responseCache.keys()) {
+    if (key.includes(prefix)) responseCache.delete(key);
+  }
+  for (const key of inFlightRequests.keys()) {
+    if (key.includes(prefix)) inFlightRequests.delete(key);
+  }
+}
+
 export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
   const initData = getInitData();
   if (!initData && !options.allowNoTelegram) {
     throw new ApiError("Session expired. Reopen from Telegram.", 401);
   }
 
+  const {
+    body,
+    headers,
+    allowNoTelegram: _allowNoTelegram,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+    cacheTtlMs = DEFAULT_GET_CACHE_TTL_MS,
+    skipCache = false,
+    retry = MAX_RETRIES,
+    ...requestOptions
+  } = options;
+
+  const method = (requestOptions.method || "GET").toUpperCase();
   const url = path.startsWith("http") ? path : `${API_BASE}${path.startsWith("/") ? path : `/${path}`}`;
-  const response = await fetch(url, {
-    ...options,
-    headers: buildHeaders(options.headers),
-    body: options.body === undefined ? undefined : JSON.stringify(options.body),
-  });
+  const cacheKey = getCacheKey(method, url, body);
+  const now = Date.now();
 
-  const contentType = response.headers.get("content-type") || "";
-  const payload = contentType.includes("application/json") ? await response.json().catch(() => null) : await response.text().catch(() => "");
-
-  const payloadRecord = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : null;
-  if (!response.ok || payloadRecord?.ok === false) {
-    throw new ApiError(apiMessage(payload) || messageForStatus(response.status), response.status, payload);
+  if (method !== "GET") {
+    // Mutations may change group details, formats, incidents, runtime config, or logs.
+    clearApiCache();
   }
 
-  return payload as T;
+  if (cacheKey && !skipCache) {
+    const cached = responseCache.get(cacheKey);
+    if (cached && cached.expiresAt > now) return cloneValue(cached.value) as T;
+
+    const pending = inFlightRequests.get(cacheKey);
+    if (pending) return cloneValue(await pending) as T;
+  }
+
+  const runRequest = async (attempt = 0): Promise<T> => {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+
+    if (requestOptions.signal) {
+      if (requestOptions.signal.aborted) controller.abort();
+      else requestOptions.signal.addEventListener("abort", () => controller.abort(), { once: true });
+    }
+
+    try {
+      const response = await fetch(url, {
+        ...requestOptions,
+        method,
+        headers: buildHeaders(headers, body !== undefined),
+        signal: controller.signal,
+        body: body === undefined ? undefined : typeof body === "string" ? body : JSON.stringify(body),
+      });
+
+      const payload = await parseResponse(response);
+      const payloadRecord = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : null;
+
+      if (!response.ok || payloadRecord?.ok === false) {
+        const shouldRetry = method === "GET" && response.status >= 500 && attempt < retry;
+        if (shouldRetry) return runRequest(attempt + 1);
+        throw new ApiError(apiMessage(payload) || messageForStatus(response.status), response.status, payload);
+      }
+
+      return payload as T;
+    } catch (error) {
+      const isAbort = error instanceof DOMException && error.name === "AbortError";
+      const canRetry = method === "GET" && !isAbort && attempt < retry;
+      if (canRetry) return runRequest(attempt + 1);
+      if (isAbort) throw new ApiError("Request timed out. Please check your connection and try again.", 408);
+      throw error;
+    } finally {
+      window.clearTimeout(timeoutId);
+    }
+  };
+
+  if (cacheKey && !skipCache) {
+    const pending = runRequest().then((value) => {
+      responseCache.set(cacheKey, { value, expiresAt: Date.now() + cacheTtlMs });
+      return value;
+    }).finally(() => {
+      inFlightRequests.delete(cacheKey);
+    });
+    inFlightRequests.set(cacheKey, pending);
+    return cloneValue(await pending) as T;
+  }
+
+  return runRequest();
 }
 
 export async function createSession(refresh = false) {
   return apiFetch<AuthSession>(`/api/bootstrap${refresh ? "?refresh=true" : ""}`, {
     method: "POST",
     body: {},
+    timeoutMs: 25_000,
   });
 }

@@ -56,8 +56,8 @@ export function DeveloperDashboard() {
           </TabsList>
         </div>
         <TabsContent value="overview"><DeveloperOverviewPanel /></TabsContent>
-        <TabsContent value="users"><DeveloperTable endpoint="/api/developer/users" title="Bot users" itemKeys={["users", "items", "data"]} /></TabsContent>
-        <TabsContent value="groups"><DeveloperTable endpoint="/api/developer/groups" title="Bot groups" itemKeys={["groups", "items", "data"]} /></TabsContent>
+        <TabsContent value="users"><DeveloperTable endpoint="/api/developer/users?limit=100" title="Bot users" itemKeys={["users", "items", "data"]} /></TabsContent>
+        <TabsContent value="groups"><DeveloperTable endpoint="/api/developer/groups?limit=200" title="Bot groups" itemKeys={["groups", "items", "data"]} /></TabsContent>
         <TabsContent value="feedback"><FeedbackList /></TabsContent>
         <TabsContent value="runtime"><RuntimeConfigEditor /></TabsContent>
         <TabsContent value="logs"><ServerLogsPanel /></TabsContent>
@@ -114,7 +114,7 @@ function DeveloperTable({ endpoint, title, itemKeys }: { endpoint: string; title
 }
 
 function FeedbackList() {
-  const query = useApi<unknown>(() => apiFetch("/api/developer/feedback"), []);
+  const query = useApi<unknown>(() => apiFetch("/api/developer/feedback?limit=100"), []);
   const items = listFromResponse<Record<string, unknown>>(query.data, ["feedback", "items", "data"]);
   return (
     <Card>
@@ -205,7 +205,7 @@ function RuntimeConfigEditor() {
 function ServerLogsPanel() {
   const [level, setLevel] = useState("all");
   const endpoint = `/api/server/log?limit=200&level=${encodeURIComponent(level)}&category=all&since_id=0`;
-  const query = useApi<ServerLogsResponse>(() => apiFetch(endpoint), [endpoint]);
+  const query = useApi<ServerLogsResponse>(() => apiFetch(endpoint, { skipCache: true }), [endpoint]);
   const logs = (query.data?.logs || []) as ServerLogRow[];
 
   const clear = async () => {

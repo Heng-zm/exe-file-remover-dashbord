@@ -17,7 +17,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { EmptyState } from "@/components/common/EmptyState";
 import { HealthDot, RiskBadge, SecurityBadge, StatusBadge } from "@/components/common/StatusBadge";
 import { apiFetch, FormatItem, GroupAdmin, type GroupDetail as GroupDetailType, GroupSettings, HealthStatus, Incident, RiskMember, TrustedHash } from "@/lib/api";
-import { compactId, extensionIsValid, formatDateTime, hashIsValid, listFromResponse, normalizeBool, safeNumber, safeText } from "@/lib/utils";
+import { compactId, extensionIsValid, formatDateTime, hashIsValid, listFromResponse, normalizeBool, safeDecodeURIComponent, safeNumber, safeText, uniqueStrings } from "@/lib/utils";
 import { configureMainButton, haptic } from "@/lib/telegram";
 import { useApi } from "@/hooks/useApi";
 
@@ -35,7 +35,7 @@ const tabItems = [
 
 export function GroupDetail() {
   const { chatId = "" } = useParams();
-  const decodedChatId = decodeURIComponent(chatId);
+  const decodedChatId = safeDecodeURIComponent(chatId);
   const query = useApi<unknown>(() => apiFetch(`/api/groups/${encodeURIComponent(decodedChatId)}`), [decodedChatId], Boolean(decodedChatId));
   const group = useMemo(() => normalizeGroup(query.data), [query.data]);
 
@@ -291,6 +291,11 @@ function FormatSection({ chatId, kind, title, description }: { chatId: string; k
     }
     setBusy(true);
     try {
+      const existing = items.map(formatText).map((item) => item.toLowerCase());
+      if (existing.includes(clean)) {
+        toast.info(`${clean} already exists`);
+        return;
+      }
       await apiFetch(endpoint, { method: "POST", body: { mode: "append", extensions: [clean] } });
       toast.success(`${clean} added`);
       haptic("success");
@@ -305,7 +310,7 @@ function FormatSection({ chatId, kind, title, description }: { chatId: string; k
   };
 
   const remove = async (value: string) => {
-    const nextExtensions = items.map(formatText).filter((item) => item && item !== value);
+    const nextExtensions = uniqueStrings(items.map(formatText).filter((item) => item && item !== value));
     setBusy(true);
     try {
       // README_API exposes POST append/replace for formats. Removing one item is done by replacing the list.
@@ -484,9 +489,9 @@ function IncidentsPanel({ chatId }: { chatId: string }) {
                   <TableCell><Badge variant="secondary">{safeText(incident.status, "open")}</Badge></TableCell>
                   <TableCell>
                     <div className="flex justify-end gap-2">
-                      <Button size="sm" variant="outline" onClick={() => void act(incident, "warn")}>Warn</Button>
-                      <Button size="sm" variant="destructive" onClick={() => void act(incident, "ban")}>Ban</Button>
-                      <Button size="sm" variant="ghost" onClick={() => void act(incident, "ignore")}>Ignore</Button>
+                      <Button size="sm" variant="outline" disabled={incident.action_supported === false} onClick={() => void act(incident, "warn")}>Warn</Button>
+                      <Button size="sm" variant="destructive" disabled={incident.action_supported === false} onClick={() => void act(incident, "ban")}>Ban</Button>
+                      <Button size="sm" variant="ghost" disabled={incident.action_supported === false} onClick={() => void act(incident, "ignore")}>Ignore</Button>
                     </div>
                   </TableCell>
                 </TableRow>

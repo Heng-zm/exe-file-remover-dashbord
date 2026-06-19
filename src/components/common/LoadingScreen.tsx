@@ -5,8 +5,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 
 export function LoadingScreen({ error }: { error?: string | null }) {
   return (
-    <main className="flex min-h-screen items-center justify-center bg-background p-5 safe-top safe-bottom">
-      <Card className="w-full max-w-sm overflow-hidden">
+    <main className="flex min-h-screen min-h-[100dvh] items-center justify-center bg-background p-5 text-foreground safe-top safe-bottom">
+      <Card className="w-full max-w-sm overflow-hidden shadow-soft">
         <CardContent className="p-6">
           <div className="flex flex-col items-center text-center">
             <div className="rounded-3xl bg-primary/10 p-4 text-primary">

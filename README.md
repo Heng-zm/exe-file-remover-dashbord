@@ -85,6 +85,22 @@ npx shadcn@latest add button card badge tabs dialog sheet dropdown-menu input la
 npm install lucide-react react-router-dom sonner
 ```
 
+
+## 1.0.1 bug fixes and performance improvements
+
+- Split routes into lazy-loaded chunks so the first Telegram WebView load is much smaller.
+- Added Vite manual chunks for React, Radix UI, and vendor code.
+- Added API request timeout handling, safe JSON parsing, GET cache, and in-flight GET request de-duplication.
+- Cleared API cache automatically after mutations so saved settings, formats, hashes, incidents, and logs refresh correctly.
+- Reduced duplicate dashboard group requests by using `/api/bootstrap` groups first.
+- Improved `useApi` to ignore stale responses and avoid state updates after unmount.
+- Hardened Telegram theme/init/MainButton handling for older Telegram clients.
+- Added safer chunk-load failure fallback so Telegram shows a readable error instead of a blank screen.
+- Fixed unsafe URL decode edge cases for group IDs.
+- Improved formats manager duplicate handling and remove-by-replace behavior.
+- Disabled unsupported incident action buttons when the API returns `action_supported: false`.
+- Improved mobile viewport height, tap behavior, and Telegram theme-color syncing.
+
 ## Backend requirements
 
 Your backend should:
