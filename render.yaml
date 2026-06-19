@@ -1,0 +1,9 @@
+services:
+  - type: static
+    name: exe-remover-miniapp
+    env: static
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    envVars:
+      - key: VITE_API_BASE
+        value: https://exe-file-remover.onrender.com
