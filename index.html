@@ -4,19 +4,49 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#0f172a" />
-    <title>EXE File Remover Security Bot</title>
+    <title>EXE Remover Bot! 🛡️</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
-      html, body { min-height: 100%; margin: 0; background: #0f172a; color: #f8fafc; }
-      .boot-fallback { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; box-sizing: border-box; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-      .boot-card { width: 100%; max-width: 390px; border: 1px solid rgba(148,163,184,.22); border-radius: 24px; background: rgba(15,23,42,.92); padding: 22px; box-shadow: 0 20px 60px rgba(0,0,0,.35); }
+      html, body { min-height: 100%; margin: 0; background: #17212b; color: #f8fafc; }
+      #root { min-height: 100vh; min-height: 100dvh; }
+      .boot-fallback { min-height: 100vh; min-height: 100dvh; display: flex; align-items: center; justify-content: center; padding: max(20px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom)); box-sizing: border-box; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .boot-card { width: 100%; max-width: 390px; border: 1px solid rgba(148,163,184,.24); border-radius: 24px; background: rgba(15,23,42,.94); padding: 22px; box-shadow: 0 20px 60px rgba(0,0,0,.35); }
       .boot-logo { width: 52px; height: 52px; border-radius: 18px; display: grid; place-items: center; background: rgba(59,130,246,.16); color: #93c5fd; font-size: 28px; }
       .boot-title { margin: 14px 0 6px; font-size: 22px; font-weight: 900; }
       .boot-text { margin: 0; color: #cbd5e1; line-height: 1.45; font-size: 14px; }
+      .boot-error { margin-top: 14px; white-space: pre-wrap; word-break: break-word; border-radius: 16px; background: rgba(239,68,68,.12); color: #fecaca; padding: 12px; font-size: 12px; display: none; }
+      .boot-button { margin-top: 14px; width: 100%; border: 0; border-radius: 14px; background: #3b82f6; color: #fff; padding: 12px 14px; font-weight: 800; }
       .boot-skeleton { height: 14px; margin-top: 18px; border-radius: 999px; background: linear-gradient(90deg, rgba(148,163,184,.18), rgba(148,163,184,.36), rgba(148,163,184,.18)); background-size: 220% 100%; animation: boot 1.15s infinite linear; }
       .boot-skeleton.short { width: 62%; }
       @keyframes boot { from { background-position: 220% 0; } to { background-position: -220% 0; } }
     </style>
+    <script>
+      window.__MINI_APP_READY__ = false;
+      window.__miniAppFatal = function (message) {
+        var root = document.getElementById('root');
+        if (!root) return;
+        var safe = String(message || 'Unknown startup error').replace(/[<>&]/g, function (ch) { return ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' })[ch] || ch; });
+        root.innerHTML = '<main class="boot-fallback"><section class="boot-card"><div class="boot-logo">🛡️</div><h1 class="boot-title">EXE Remover Mini App</h1><p class="boot-text">The frontend stopped before it could render. This screen prevents Telegram from showing a blank page.</p><pre class="boot-error" style="display:block">' + safe + '</pre><button class="boot-button" onclick="location.reload()">Reload Mini App</button></section></main>';
+      };
+      window.addEventListener('error', function (event) {
+        window.__miniAppFatal((event && (event.message || (event.error && event.error.message))) || 'JavaScript startup error');
+      });
+      window.addEventListener('unhandledrejection', function (event) {
+        var reason = event && event.reason;
+        window.__miniAppFatal((reason && (reason.message || String(reason))) || 'Unhandled app promise rejection');
+      });
+      window.setTimeout(function () {
+        if (!window.__MINI_APP_READY__) {
+          var status = document.getElementById('boot-status');
+          var error = document.getElementById('boot-error');
+          if (status) status.textContent = 'Still loading… If this stays here, redeploy with Clear Build Cache.';
+          if (error) {
+            error.style.display = 'block';
+            error.textContent = 'React bundle did not mark the app as ready. This usually means Vercel served stale assets or Telegram WebView could not load the JS/CSS bundle.';
+          }
+        }
+      }, 4500);
+    </script>
   </head>
   <body>
     <div id="root">
@@ -24,7 +54,8 @@
         <section class="boot-card">
           <div class="boot-logo">🛡️</div>
           <h1 class="boot-title">EXE File Remover</h1>
-          <p class="boot-text">Connecting to Telegram…</p>
+          <p id="boot-status" class="boot-text">Connecting to Telegram…</p>
+          <pre id="boot-error" class="boot-error"></pre>
           <div class="boot-skeleton"></div>
           <div class="boot-skeleton short"></div>
         </section>

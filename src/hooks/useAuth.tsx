@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
-import { ApiError, AuthSession, clearApiCache, createSession, TelegramProfile, testApiConnection } from "@/lib/api";
-import { getInitData, initTelegramApp, isTelegramWebApp } from "@/lib/telegram";
-import { normalizeBool } from "@/lib/utils";
+import { AuthSession, clearApiCache, loadBootstrap, TelegramProfile, testApiConnection } from "@/lib/api";
+import { getInitData, getTelegramWebApp, initTelegramApp } from "@/lib/telegram";
+import { getObject, normalizeBool } from "@/lib/utils";
 
 type AuthContextValue = {
   loading: boolean;
@@ -15,23 +15,71 @@ type AuthContextValue = {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
+function firstObject(...values: unknown[]): Record<string, unknown> | null {
+  for (const value of values) {
+    if (value && typeof value === "object" && !Array.isArray(value)) return value as Record<string, unknown>;
+  }
+  return null;
+}
+
+function extractTelegramUnsafeUser(): TelegramProfile | null {
+  const unsafe = getTelegramWebApp()?.initDataUnsafe;
+  const user = unsafe?.user;
+  if (!user) return null;
+  return {
+    id: user.id,
+    first_name: user.first_name,
+    last_name: user.last_name,
+    username: user.username,
+    language_code: user.language_code,
+    is_premium: user.is_premium,
+    photo_url: user.photo_url,
+    start_param: unsafe?.start_param,
+  };
+}
+
+function normalizeSession(raw: unknown): AuthSession {
+  const root = getObject(raw);
+
+  // Some backend builds wrap dashboard data under data/session/dashboard/result.
+  const nested = firstObject(root.data, root.session, root.dashboard, root.result, root.payload);
+  const source = nested ? { ...root, ...nested } : root;
+
+  const user = firstObject(source.user, source.profile, source.me, source.telegram_user, source.current_user) || extractTelegramUnsafeUser() || undefined;
+  const groups = Array.isArray(source.groups)
+    ? source.groups
+    : Array.isArray(source.linked_groups)
+      ? source.linked_groups
+      : Array.isArray(source.chats)
+        ? source.chats
+        : Array.isArray(source.items)
+          ? source.items
+          : undefined;
+
+  return {
+    ...(source as AuthSession),
+    user: user as TelegramProfile | undefined,
+    groups: groups as AuthSession["groups"],
+    linked_group_count: Number(source.linked_group_count ?? source.linked_groups_count ?? (groups ? groups.length : 0)) || undefined,
+    is_developer: normalizeBool(source.is_developer ?? source.is_owner ?? source.developer ?? source.owner),
+    is_owner: normalizeBool(source.is_owner ?? source.owner),
+  };
+}
+
 function extractUser(session: AuthSession | null): TelegramProfile | null {
   if (!session) return null;
-  return session.user || session.profile || session.me || null;
+  return session.user || session.profile || session.me || extractTelegramUnsafeUser();
 }
 
 function extractDeveloper(session: AuthSession | null, user: TelegramProfile | null) {
   return normalizeBool(session?.is_owner) || normalizeBool(session?.is_developer) || normalizeBool(user?.is_owner) || normalizeBool(user?.is_developer) || normalizeBool(user?.developer);
 }
 
-function friendlyAuthMessage(err: unknown) {
-  if (err instanceof ApiError) {
-    if (err.status === 401) return "Session expired or Telegram initData is missing. Reopen this Mini App from Telegram.";
-    if (err.status === 403) return "You do not have permission for this dashboard.";
-    if (err.status === 408 || err.status === 0) return err.message || "API connection failed. Check Render service, CORS, and Vercel env.";
-    return err.message;
-  }
-  return err instanceof Error ? err.message : "Unable to connect to Telegram session.";
+function friendlyBootstrapError(status: number, message?: string | null) {
+  if (status === 401) return "Session expired or Telegram initData is missing. Reopen this Mini App from Telegram.";
+  if (status === 403) return "You do not have permission for this dashboard.";
+  if (status === 408 || status === 0) return message || "API connection failed. Check Render service, CORS, and Vercel env.";
+  return message || "Unable to load dashboard from API.";
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -48,24 +96,35 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       initTelegramApp();
       if (liveRefresh) clearApiCache();
 
-      const hasInitData = Boolean(getInitData());
-
-      // Public connection test keeps the UI informative when Telegram auth is missing.
-      // It is best-effort and never blocks the authenticated dashboard load.
+      // Best-effort public connection test. It never blocks dashboard render.
       void testApiConnection().then((result) => setApiOnline(result.ok)).catch(() => setApiOnline(false));
 
-      if (!isTelegramWebApp() || !hasInitData) {
+      const result = await loadBootstrap(liveRefresh);
+      if (!result.ok) {
         setSession(null);
-        setError("Please open this app from Telegram Mini App button. Normal browser links do not provide initData.");
+        setApiOnline(result.status > 0 && result.status < 500);
+        setError(friendlyBootstrapError(result.status, result.error));
         return;
       }
 
-      const nextSession = await createSession(liveRefresh);
-      setSession(nextSession || {});
+      const normalized = normalizeSession(result.data || {});
+      const hasInitData = Boolean(getInitData());
+      const hasUser = Boolean(extractUser(normalized));
+
+      setSession(normalized);
       setApiOnline(true);
+
+      // Do not blank the app when backend returned 200. Show the dashboard shell and a
+      // visible warning instead. This handles MINI_APP_PUBLIC_BOOTSTRAP_ON_MISSING_INITDATA.
+      if (!hasInitData && !hasUser) {
+        setError("API is online, but Telegram initData is missing. Open this Mini App from the bot's Mini App button, not from a normal browser link.");
+      } else {
+        setError(null);
+      }
     } catch (err) {
+      console.error("Bootstrap failed", err);
       setSession(null);
-      setError(friendlyAuthMessage(err));
+      setError(err instanceof Error ? err.message : "Unable to connect to Telegram session.");
     } finally {
       setLoading(false);
     }

@@ -14,7 +14,7 @@ import { useApi } from "@/hooks/useApi";
 import { useTelegram } from "@/hooks/useTelegram";
 
 export function Dashboard() {
-  const { user, session, isDeveloper } = useAuth();
+  const { user, session, isDeveloper, error, apiOnline, refresh } = useAuth();
   const telegram = useTelegram();
   const sessionGroups = listFromResponse<GroupSummary>(session, ["groups"]);
   const shouldFetchGroups = sessionGroups.length === 0;
@@ -27,6 +27,16 @@ export function Dashboard() {
 
   return (
     <div className="space-y-5">
+
+      {error ? (
+        <Alert variant="warning">
+          <AlertTitle>{apiOnline ? "API connected, auth needs attention" : "Connection needs attention"}</AlertTitle>
+          <AlertDescription className="space-y-3">
+            <span className="block">{error}</span>
+            <Button variant="outline" size="sm" className="rounded-xl" onClick={() => void refresh(true)}>Retry bootstrap</Button>
+          </AlertDescription>
+        </Alert>
+      ) : null}
       <Card className="overflow-hidden border-primary/20 bg-gradient-to-br from-primary/10 via-card to-card">
         <CardContent className="p-5">
           <div className="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
