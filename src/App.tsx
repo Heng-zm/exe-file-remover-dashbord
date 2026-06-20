@@ -16,11 +16,10 @@ const ScannerTest = lazy(() => import("@/pages/ScannerTest").then((module) => ({
 const Settings = lazy(() => import("@/pages/Settings").then((module) => ({ default: module.Settings })));
 
 function AppRoutes() {
-  const { loading, error } = useAuth();
+  const { loading, error, apiOnline, refresh } = useAuth();
   useTelegram();
 
-  if (loading || error === "Please open this app from Telegram.") return <LoadingScreen error={error} />;
-  if (error) return <LoadingScreen error={error} />;
+  if (loading || error) return <LoadingScreen error={error} apiOnline={apiOnline} onRetry={() => void refresh(true)} />;
 
   return (
     <Suspense fallback={<LoadingScreen />}>

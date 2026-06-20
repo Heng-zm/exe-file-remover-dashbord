@@ -176,3 +176,27 @@ When redeploying on Vercel:
 - Telegram BackButton and MainButton are integrated.
 - Telegram haptic feedback is used on save, scan, and destructive actions.
 - The UI maps Telegram theme colors into Tailwind/shadcn CSS variables.
+
+## Latest blank-screen hardening update
+
+This build includes an extra no-blank-screen auth/API layer:
+
+- `src/lib/api.ts` now exposes `apiFetchResult`, `loadBootstrap`, and `testApiConnection` for structured API results.
+- `/api/bootstrap` is called with `X-Telegram-Init-Data` and `initData` in the POST body for backend compatibility.
+- If the Mini App is opened outside Telegram, the UI shows an explicit "Open from Telegram" state instead of rendering nothing.
+- The loading screen now includes a retry button and best-effort public API status check.
+- `/api/connect-test` is attempted first; if unavailable, `/api/health` is used as a public fallback.
+
+Required Vercel env:
+
+```env
+VITE_API_BASE_URL=https://exe-file-remover.onrender.com
+```
+
+Required backend env for easier debugging:
+
+```env
+MINI_APP_PUBLIC_BOOTSTRAP_ON_MISSING_INITDATA=true
+MINI_APP_FRONTEND_DEBUG_ENABLED=true
+MINI_APP_CORS_ORIGINS=*
+```

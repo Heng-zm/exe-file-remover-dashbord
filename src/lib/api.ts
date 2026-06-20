@@ -14,6 +14,15 @@ type CacheEntry = {
 const responseCache = new Map<string, CacheEntry>();
 const inFlightRequests = new Map<string, Promise<unknown>>();
 
+
+export type ApiResult<T = unknown> = {
+  ok: boolean;
+  status: number;
+  data: T | null;
+  error: string | null;
+  authRequired?: boolean;
+};
+
 export class ApiError extends Error {
   status: number;
   payload: unknown;
@@ -420,10 +429,106 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
   return runRequest();
 }
 
-export async function createSession(refresh = false) {
-  return apiFetch<AuthSession>(`/api/bootstrap${refresh ? "?refresh=true" : ""}`, {
+export async function apiFetchResult<T>(path: string, options: ApiFetchOptions = {}): Promise<ApiResult<T>> {
+  const {
+    body,
+    headers,
+    allowNoTelegram: _allowNoTelegram,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+    cacheTtlMs: _cacheTtlMs,
+    skipCache: _skipCache,
+    retry: _retry,
+    ...requestOptions
+  } = options;
+
+  const method = (requestOptions.method || "GET").toUpperCase();
+  const url = path.startsWith("http") ? path : `${API_BASE}${path.startsWith("/") ? path : `/${path}`}`;
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+
+  if (requestOptions.signal) {
+    if (requestOptions.signal.aborted) controller.abort();
+    else requestOptions.signal.addEventListener("abort", () => controller.abort(), { once: true });
+  }
+
+  try {
+    const response = await fetch(url, {
+      ...requestOptions,
+      method,
+      mode: requestOptions.mode || "cors",
+      headers: buildHeaders(headers, body !== undefined),
+      signal: controller.signal,
+      body: body === undefined ? undefined : typeof body === "string" ? body : JSON.stringify(body),
+    });
+
+    const payload = (await parseResponse(response)) as T;
+    const payloadRecord = payload && typeof payload === "object" ? (payload as Record<string, unknown>) : null;
+    const ok = response.ok && payloadRecord?.ok !== false;
+    const error = ok ? null : apiMessage(payload) || messageForStatus(response.status);
+
+    return {
+      ok,
+      status: response.status,
+      data: payload ?? null,
+      error,
+      authRequired: response.status === 401 || payloadRecord?.auth_required === true,
+    };
+  } catch (error) {
+    const isAbort = error instanceof DOMException && error.name === "AbortError";
+    return {
+      ok: false,
+      status: isAbort ? 408 : 0,
+      data: null,
+      error: isAbort
+        ? "API request timeout. Check Render service or API base URL."
+        : error instanceof Error
+          ? error.message || "Network error. Check CORS, API URL, or internet connection."
+          : "Network error. Check CORS, API URL, or internet connection.",
+    };
+  } finally {
+    window.clearTimeout(timeoutId);
+  }
+}
+
+export async function loadBootstrap(refresh = false) {
+  // POST keeps compatibility with backend builds that also accept initData in the body.
+  return apiFetchResult<AuthSession>(`/api/bootstrap${refresh ? "?refresh=true" : ""}`, {
     method: "POST",
-    body: {},
+    body: { initData: getInitData() },
+    allowNoTelegram: true,
     timeoutMs: 25_000,
+    skipCache: true,
   });
+}
+
+export async function testApiConnection() {
+  const primary = await apiFetchResult<Record<string, unknown>>("/api/connect-test", {
+    allowNoTelegram: true,
+    timeoutMs: 10_000,
+    skipCache: true,
+  });
+
+  if (primary.status === 404) {
+    return apiFetchResult<Record<string, unknown>>("/api/health", {
+      allowNoTelegram: true,
+      timeoutMs: 10_000,
+      skipCache: true,
+    });
+  }
+
+  return primary;
+}
+
+export async function createSession(refresh = false) {
+  const result = await loadBootstrap(refresh);
+
+  if (!result.ok) {
+    throw new ApiError(
+      result.error || (result.authRequired ? "Session expired. Reopen from Telegram." : "Unable to load dashboard."),
+      result.status || 0,
+      result.data,
+    );
+  }
+
+  return result.data || {};
 }
